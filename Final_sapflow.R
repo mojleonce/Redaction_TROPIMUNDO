@@ -1,4 +1,5 @@
-Raw_data <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Raw data.xlsx", sheet = "Analysis",
+library(readxl)
+Raw_data <- read_excel("data/Raw_data.xlsx", sheet = "Analysis",
   col_types = c(
     # Col  1: Date
     "date",
@@ -94,11 +95,34 @@ Raw_data <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Raw data.xlsx",
 library(ggpubr)
 library(ggplot2)
 library(dplyr)
-library(Rmisc)
 library(gridExtra)
 library(scales)
 library(purrr)
 library(readxl)
+library(writexl)
+# Rmisc is not installable in this environment (no CRAN access); summarySE is
+# reproduced verbatim (same N/mean/sd/se/ci output columns) from Rmisc's own
+# implementation, which itself is the "Cookbook for R" summarySE function.
+summarySE <- function(data = NULL, measurevar, groupvars = NULL, na.rm = FALSE,
+                       conf.interval = .95, .drop = TRUE) {
+  length2 <- function(x, na.rm = FALSE) {
+    if (na.rm) sum(!is.na(x)) else length(x)
+  }
+  datac <- data %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(groupvars)), .drop = .drop) %>%
+    dplyr::summarise(
+      N = length2(.data[[measurevar]], na.rm = na.rm),
+      mean = mean(.data[[measurevar]], na.rm = na.rm),
+      sd = sd(.data[[measurevar]], na.rm = na.rm),
+      .groups = "drop"
+    ) %>%
+    as.data.frame()
+  names(datac)[names(datac) == "mean"] <- measurevar
+  datac$se <- datac$sd / sqrt(datac$N)
+  ciMult <- qt(conf.interval / 2 + .5, datac$N - 1)
+  datac$ci <- datac$se * ciMult
+  datac
+}
 cleanup=theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.background = element_blank(),axis.line = element_line(color = "black"))
 
 Control<-subset(Raw_data, Treatment=="Control")
@@ -106,7 +130,7 @@ Makera1<-subset(Raw_data, Site=="Makera")
 ## Remove croton
 Makera <- Makera1 %>% filter(Species != "Cme")
 ## Figure 1
-Month<-factor(Makera$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
+Makera$Month<-factor(Makera$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 data1=summarySE(Makera,na.rm=TRUE, measurevar="PredawnWP", groupvars=c("Treatment","Month", "Species"))
 data11=summarySE(Makera,na.rm=TRUE, measurevar="PredawnWP", groupvars=c("Month","Treatment"))
 
@@ -131,7 +155,7 @@ g3<-ggplot(data3, aes(x = Month, y = DWP, group = Month, color = Species)) +scal
   geom_line(data = data31, aes(x = Month, y = DWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data31, aes(x = Month, ymin = DWP - se, ymax = DWP + se), width = 0.2, color = "black") +  geom_point(data = data31, aes(x = Month, y = DWP), shape = 8, size = 3, color = "black")
 g3
 Makera2 <- Makera %>% filter(Species != "Mla")
-Month<-factor(Makera2$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
+Makera2$Month<-factor(Makera2$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 
 data5=summarySE(Makera2,na.rm=TRUE, measurevar="Spflow", groupvars=c("Species","Month","Treatment"))
 data51=summarySE(Makera2,na.rm=TRUE, measurevar="Spflow", groupvars=c("Month","Treatment"))
@@ -140,7 +164,7 @@ g5<-ggplot(data5, aes(x = Month, y = Spflow, group = Month, color = Species)) +s
   geom_line(data = data51, aes(x = Month, y = Spflow, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data51, aes(x = Month, ymin = Spflow - se, ymax = Spflow + se), width = 0.2, color = "black") +  geom_point(data = data51, aes(x = Month, y = Spflow), shape = 8, size = 3, color = "black")
 g5
 ## Predawn DV
-Month <- factor(Makera$Month1, c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
+Makera$Month <- factor(Makera$Month1, c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 dataDV  <- summarySE(Makera, na.rm = TRUE, measurevar = "DV", groupvars = c("Treatment", "Month", "Species"))
 dataDV1 <- summarySE(Makera, na.rm = TRUE, measurevar = "DV", groupvars = c("Month", "Treatment"))
 gg<-ggplot(dataDV, aes(x = Month, y = DV, group = Month, color = Species)) +scale_shape_manual(values = c(15, 17, 18, 19, 4)) +geom_errorbar(aes(ymin = DV- se, ymax = DV + se), width = 0.1) +geom_point(size = 2) + theme(strip.text = element_blank())+
@@ -148,7 +172,7 @@ geom_line(aes(group = Species))+facet_wrap(~Treatment, labeller = labeller(Treat
  strip.text = element_text(size = 12, face = "bold"), axis.text = element_text(size = 12),  axis.title.y = element_text(size = 12))+
  geom_line(data = dataDV1, aes(x = Month, y = DV, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = dataDV1, aes(x = Month, ymin = DV - se, ymax = DV + se), width = 0.2, color = "black") +  geom_point(data = dataDV1, aes(x = Month, y = DV), shape = 8, size = 3, color = "black")+theme(axis.text.x = element_text(angle = 45, hjust = 1))
 gg
-ggplot2::ggsave('PredawnDV.png', gg,width = 10.14, height = 5.75, dpi = 400)
+ggplot2::ggsave('output/PredawnDV.png', gg,width = 10.14, height = 5.75, dpi = 400)
 library(cowplot)
 legend <- get_legend(g1)
 g1 <- g1 + theme(legend.position="none")
@@ -157,10 +181,10 @@ plots <- plot_grid(g1, g2, g3, g5, ncol = 1, align = 'v', rel_heights = c(2.5, 2
 plots
 Figure <- plot_grid( plots,ncol = 2, rel_widths = c(3, 1.5))
 Figure
-ggplot2::ggsave('Waterfff.png', plots,width = 10.14, height = 5.75, dpi = 1000)
-ggplot2::ggsave('Wateruses.png', g1,width = 10.14, height = 5.75, dpi = 1000)
+ggplot2::ggsave('output/Waterfff.png', plots,width = 10.14, height = 5.75, dpi = 1000)
+ggplot2::ggsave('output/Wateruses.png', g1,width = 10.14, height = 5.75, dpi = 1000)
 ### Leaf habit
-Month<-factor(Makera$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
+Makera$Month<-factor(Makera$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 data1=summarySE(Makera,na.rm=TRUE, measurevar="PredawnWP", groupvars=c("Treatment","Month", "Leaf"))
 data11=summarySE(Makera,na.rm=TRUE, measurevar="PredawnWP", groupvars=c("Month","Treatment"))
 
@@ -183,7 +207,7 @@ g3<-ggplot(data3, aes(x = Month, y = DWP, group = Month, color = Leaf)) +scale_s
   theme(axis.title.x=element_blank(), axis.text.x=element_blank())+geom_line(aes(group = Leaf))+scale_color_manual(values = c("E" = "#117733", "SD" = "#E69F00"))  +labs( x = "Months", y= expression(Delta*italic(ψ)~"(MPa)")) +cleanup+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+facet_wrap (~Treatment)+theme(legend.position="none")
 g3
 Makera2 <- Makera %>% filter(Species != "Mla")
-Month<-factor(Makera2$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
+Makera2$Month<-factor(Makera2$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 
 data5=summarySE(Makera2,na.rm=TRUE, measurevar="Spflow", groupvars=c("Leaf","Month","Treatment"))
 data51=summarySE(Makera2,na.rm=TRUE, measurevar="Spflow", groupvars=c("Month","Treatment"))
@@ -197,13 +221,13 @@ plots <- plot_grid(g1, g2, g3, g5, ncol = 1, align = 'v', rel_heights = c(2.5, 2
 plots
 Figure <- plot_grid( plots,ncol = 2, rel_widths = c(3, 1.5))
 Figure
-ggplot2::ggsave('Leaf11.png', plots,width = 10.14, height = 5.75, dpi = 1000)
-ggplot2::ggsave('Leaf111.png', plots,width = 10.14, height = 5.75, dpi = 1000)
+ggplot2::ggsave('output/Leaf11.png', plots,width = 10.14, height = 5.75, dpi = 1000)
+ggplot2::ggsave('output/Leaf111.png', plots,width = 10.14, height = 5.75, dpi = 1000)
 
 
 ## Figure S2
 ## Daily change
-Daily <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Daily.xlsx", 
+Daily <- read_excel("data/Daily.xlsx",
                     sheet = "Rubona")
 Daily<-subset(Daily, DAYS=="Day1")
 data1=summarySE(Daily,na.rm=TRUE, measurevar="Value", groupvars=c("Species", "Time"))
@@ -211,7 +235,7 @@ data1$Species <- factor(data1$Species , levels=c("Fth", "Sgu", "Bbr","Pfu","Pfa"
 Fig1<-ggplot(data1, aes(x = Time, y = Value ))+geom_line(aes(color = Species))+geom_point(aes(color = Species))  +cleanup+scale_x_datetime(name="Time of the day", labels = date_format("%H", tz = "Europe/London"), date_breaks = "2 hour")
 Fig1
 Fig1<-Fig1+labs(y = "ΔV (mV)")
-ggplot2::ggsave('Daily sapflux.png', Fig1,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/Daily sapflux.png', Fig1,width = 8.14, height = 3.65, dpi = 1000)
 ## Add temperature
 data_u10 <- summarySE(Daily, na.rm = TRUE, measurevar = "u10", groupvars = c("Species", "Time"))
 data_temp <- summarySE(Daily, na.rm = TRUE, measurevar = "Tcan", groupvars = c("Species", "Time"))
@@ -225,7 +249,7 @@ Fig1
 ## Figure S1
 ### Taller trees are more tolerant to drought???
 ## Making a graph from two datasets 
-Changes1 <- read_excel("C:/Gothenburg/Data/Hydraulic/Analysis/Changes.xlsx", 
+Changes1 <- read_excel("data/Changes.xlsx",
                        sheet = "Change")
 Changes <- Changes1 %>% filter(Species != "Cme")
 
@@ -240,10 +264,10 @@ GG1 <- ggscatter(merged_data, x = 'Height', y = 'PMD', color = "darkgreen", conf
 GG1
 GG1 <- GG1 + geom_smooth(data = subset(merged_data, Treatment == "Control"),  aes(x = Height, y = PMD), method = "lm", color = "black", se = TRUE)
 GG1
-ggplot2::ggsave('ChangeMPA.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChangeMPA.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
 
 ## Figure 3
-Combined_Data <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Combined_Data.xlsx", sheet = "Sheet2")
+Combined_Data <- read_excel("data/Combined_Data.xlsx", sheet = "Sheet2")
 Combined_Data$Month <- factor(Combined_Data$Month, levels = c("Early Jun", "Mid Jun", "Early Jul", "Mid Jul", "Early Aug", "Mid Aug", "Early Sep"))
 g<-ggscatter(Combined_Data, x = 'Height', y = 'PredawnWP', color = 'Month', add = "reg.line", conf.int = FALSE,palette = "jco",alpha=0.3,
 )+stat_cor(aes(color = Month, label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), show.legend = TRUE, p.accuracy = 0.001, r.accuracy = 0.01, label.x=250) +scale_color_discrete( name = 'Month')+labs(y=expression(italic(ψ)["pd"]*" (MPa)"))+labs(x = "Tree height (cm)")+facet_wrap(~Treatment)
@@ -283,7 +307,7 @@ for(month in irrigated_months) {
                        aes(x = Height, y = PredawnWP, color = Month), method = "lm",linetype = "dotted", alpha=0.6, se = FALSE)
 }
 g
-ggplot2::ggsave('size.png', g,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/size.png', g,width = 8.14, height = 3.65, dpi = 1000)
 
 #blurred line
 for (month in control_months) {
@@ -351,11 +375,11 @@ SWC4
 SWC5<-ggscatter( data_merged9, x = 'SWC', y = 'u', add = "reg.line", conf.int = FALSE,palette = "jco") + stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),  show.legend = FALSE,  p.accuracy = 0.001, r.accuracy = 0.01)+xlab(bquote('Soil water content ('* g~g^-1*')'))  +theme(legend.position = "right") +geom_errorbar(aes(ymin = u- se.x, ymax = u+ se.x), width = 0.1) +  # Y-axis error bars
   geom_errorbarh(aes(xmin = SWC - se.y, xmax = SWC + se.y), height = 0.1)+ylab(bquote('Js ('*~10^-6~m~s^-1*')'))+theme(axis.text = element_text(size = 14))+theme(axis.title.y = element_text(size = 14))+theme(axis.title.x = element_text(size = 14))
 SWC5
-ggplot2::ggsave('SWCU.png', SWC5,width = 9.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/SWCU.png', SWC5,width = 9.14, height = 3.65, dpi = 1000)
 
 plots <- plot_grid(SWC1, SWC2, SWC4,SWC3, nrow = 1, align = 'H')
 plots
-ggplot2::ggsave('SWC.png', plots,width = 14.14, height = 3.75, dpi = 1000)
+ggplot2::ggsave('output/SWC.png', plots,width = 14.14, height = 3.75, dpi = 1000)
 
 VPD1<-ggscatter( data_merged5, x = 'VPD', y = 'PredawnWP', add = "reg.line", conf.int = FALSE,palette = "jco") + stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),  show.legend = FALSE,  p.accuracy = 0.001, r.accuracy = 0.01)+xlab(bquote('Vapor pressure deficit (KPa)'))  +theme(legend.position = "right") +geom_errorbar(aes(ymin = PredawnWP - se.x, ymax = PredawnWP+ se.x), width = 0.1) +  # Y-axis error bars
   geom_errorbarh(aes(xmin = VPD - se.y, xmax = VPD + se.y), height = 0.1)+labs(y="ψpd (MPa)")+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 14))+theme(axis.title.x = element_text(size = 14))
@@ -369,7 +393,7 @@ VPD4<-ggscatter( data_merged7, x = 'VPD', y = 'DWP', conf.int = FALSE,palette = 
 VPD4
 plots2 <- plot_grid(VPD1, VPD2, VPD4, VPD3, nrow = 1, align = 'H')
 plots2
-ggplot2::ggsave('VPD11.png', plots2,width = 14.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/VPD11.png', plots2,width = 14.14, height = 3.65, dpi = 1000)
 
 ## Figure 4 & 5
 ### Max and min values
@@ -398,20 +422,25 @@ combined_all2 <- combined_P %>%
   full_join(combined_F, by = c("Individu22", "Treatment")) %>%
   full_join(combined_u, by = c("Individu22", "Treatment")) %>%
   full_join(combined_M, by = c("Individu22", "Treatment"))
-write_xlsx(combined_all2,"C:\\Gothenburg\\Data\\Hydraulic\\Publication\\Decrease2.xlsx")
-Decrease <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Decrease.xlsx", 
+write_xlsx(combined_all2,"output/Decrease2.xlsx")
+Decrease <- read_excel("data/Decrease.xlsx",
                        sheet = "Sheet2")
 change_F<-ggscatter(Decrease, x = 'Height', y = 'Percent_U',  add = "reg.line", palette = "jco",conf.int = TRUE,   color = "darkgreen",add.params = list(color = "black"))+stat_cor(aes( label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01, label.x=250) +labs(y = expression("Change in"~italic(F)~"(%)"))+labs(x = "Tree height (cm)")+facet_wrap(~Treatment)+theme(legend.position = "right")+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+theme(axis.title.x = element_text(size = 12))
 change_F
 data2=summarySE(Decrease,na.rm=TRUE, measurevar="Percent_U", groupvars=c("Species","Treatment"))
 data3=summarySE(Decrease,na.rm=TRUE, measurevar="Height", groupvars=c("Species","Treatment"))
 data_decrease <- merge(data2, data3 , by = c(  "Species","Treatment"))
-write_xlsx(data_decrease,"C:\\Gothenburg\\Data\\Hydraulic\\Publication\\MEAN_DECREASE.xlsx")
+write_xlsx(data_decrease,"output/MEAN_DECREASE.xlsx")
 
 change_F<-ggscatter(data_decrease, x = 'Height', y = 'Percent_U',  add = "reg.line", palette = "jco",conf.int = TRUE,   color = "darkgreen",add.params = list(color = "black"))+stat_cor(aes( label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01, label.x=250) +labs(y = expression("Change in"~italic(F)~"(%)"))+labs(x = "Tree height (cm)")+facet_wrap(~Treatment)+theme(legend.position = "right")+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+theme(axis.title.x = element_text(size = 12))
 change_F
 
-Decrease21 <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Decrease21.xlsx", sheet = "Sheet1")
+Decrease21 <- read_excel("data/Decrease21.xlsx", sheet = "Sheet1")
+# RGR/RHeight come in as character (literal "NA" text + scientific-notation
+# strings), which silently turns them into ~90-level factors inside lm()/lmer()
+# calls below -- coerce to numeric at the source so every downstream alias
+# (Decrease22) and read (Decrease2 <- ... Decrease21.xlsx ...) gets real numbers.
+Decrease21 <- Decrease21 %>% mutate(RGR = as.numeric(RGR), RHeight = as.numeric(RHeight))
 Decrease22 <- Decrease21  # same source sheet — update if a separate file/sheet is intended
 
 data2=summarySE(Decrease21,na.rm=TRUE, measurevar="Percent_U", groupvars=c("Species","Treatment"))
@@ -420,7 +449,7 @@ data_decrease <- merge(data2, data3 , by = c(  "Species","Treatment"))
 
 changeF<-ggscatter(Decrease22, x = 'Percent_U', y = 'RHeight',  add = "reg.line", palette = "jco",conf.int = TRUE,   add.params = list(color = "black"))+stat_cor(aes( label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01) +labs( x = "Change in the total sapflow (%)")+labs(y = "RGR Height (%)")+facet_wrap(~Treatment)+theme(legend.position = "right")+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+theme(axis.title.x = element_text(size = 12))
 changeF
-ggplot2::ggsave('Change12.png', changeF,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/Change12.png', changeF,width = 8.14, height = 3.65, dpi = 1000)
 
 ## FIGURE 5
 data2=summarySE(Makera,na.rm=TRUE, measurevar="Spflow", groupvars=c("Individu", "Species","Treatment"))
@@ -456,18 +485,18 @@ changeF<-ggscatter(Decrease22, x = 'Percent_U', y = 'RHeight',  add = "reg.line"
 changeF
 plots <- plot_grid(g1, changeF, nrow = 2, align = 'V',  rel_heights = c(1.25, 1))
 plots
-ggplot2::ggsave("Rheight.png", plots,width = 6.14, height = 5.15, dpi = 1000)
+ggplot2::ggsave("output/Rheight.png", plots,width = 6.14, height = 5.15, dpi = 1000)
 ## CHANGES IN TOTAL SAPFLOW WITH RGR
-data2=summarySE(Decrease2,na.rm=TRUE, measurevar="Percent_U", groupvars=c("Species","Treatment"))
-data3=summarySE(Decrease2,na.rm=TRUE, measurevar="RHeight", groupvars=c("Species","Treatment"))
+data2=summarySE(Decrease21,na.rm=TRUE, measurevar="Percent_U", groupvars=c("Species","Treatment"))
+data3=summarySE(Decrease21,na.rm=TRUE, measurevar="RHeight", groupvars=c("Species","Treatment"))
 data_decrease <- merge(data2, data3 , by = c(  "Species","Treatment"))
 
-changeF<-ggscatter(Decrease2, x = 'Percent_U', y = 'RHeight',  add = "reg.line", palette = "jco",conf.int = TRUE,   color = "darkgreen",add.params = list(color = "black"))+stat_cor(aes( label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),label.y=35, show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01) +labs(x = expression("Change in"~italic(F)~"(%)"))+labs(y = "RGR Height (%)")+facet_wrap(~Treatment)+theme(legend.position = "right")+ theme(
+changeF<-ggscatter(Decrease21, x = 'Percent_U', y = 'RHeight',  add = "reg.line", palette = "jco",conf.int = TRUE,   color = "darkgreen",add.params = list(color = "black"))+stat_cor(aes( label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),label.y=35, show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01) +labs(x = expression("Change in"~italic(F)~"(%)"))+labs(y = "RGR Height (%)")+facet_wrap(~Treatment)+theme(legend.position = "right")+ theme(
   legend.position = "right",axis.text = element_text(size = 12),axis.title.y = element_text(size = 12),axis.title.x = element_text(size = 12),strip.text = element_blank())  # Removes facet titles
 changeF
 plots <- plot_grid(g1, changeF, nrow = 2, align = 'V',  rel_heights = c(1.30, 1.1))
 plots
-ggplot2::ggsave('Fig55.png', plots,width = 8.14, height = 3.95, dpi = 1000)
+ggplot2::ggsave('output/Fig55.png', plots,width = 8.14, height = 3.95, dpi = 1000)
 
 ## Fig. 7 (single-panel version) -- J. Uddling comment: "As treatment did not
 ## affect the relationships, consider showing data from both control and
@@ -485,7 +514,7 @@ g1_pooled <- ggscatter(data_FH, x = "Spflow", y = "RHeight", color = "Treatment"
   theme(legend.position = "right", axis.text = element_text(size = 12), axis.title.y = element_text(size = 12), axis.title.x = element_text(size = 12))
 g1_pooled
 
-changeF_pooled <- ggscatter(Decrease2, x = 'Percent_U', y = 'RHeight', color = "Treatment", shape = "Treatment",
+changeF_pooled <- ggscatter(Decrease21, x = 'Percent_U', y = 'RHeight', color = "Treatment", shape = "Treatment",
                             add = "none", palette = c("Control" = "#D55E00", "Irrigated" = "#0072B2")) +
   geom_smooth(aes(x = Percent_U, y = RHeight), inherit.aes = FALSE, method = "lm", se = TRUE, color = "black") +
   stat_cor(aes(x = Percent_U, y = RHeight, label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
@@ -496,12 +525,11 @@ changeF_pooled
 
 plots_pooled <- plot_grid(g1_pooled, changeF_pooled, nrow = 2, align = 'V', rel_heights = c(1.30, 1.1))
 plots_pooled
-ggplot2::ggsave('Fig55_pooled.png', plots_pooled, width = 8.14, height = 3.95, dpi = 1000)
+ggplot2::ggsave('output/Fig55_pooled.png', plots_pooled, width = 8.14, height = 3.95, dpi = 1000)
 ## Graph on environmental data
 library(readxl)
-environment_daily <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/environment.xlsx", 
-                                sheet = "Sheet1", col_types = c("date", 
-                                                                "date", "numeric", "numeric", "numeric"))
+environment_daily <- read_excel("data/environment_daily_supplied.xlsx",
+                                sheet = "Sheet1")
 # Add a Date column for grouping
 environment_daily <- environment_daily %>%
   mutate(Date = as.Date(Date1))
@@ -512,7 +540,7 @@ environment <- environment_daily %>%
     mean_RH = mean(RH180cm, na.rm = TRUE) * 100
   )
 library(writexl)
-write_xlsx(environment_daily, "C:/Gothenburg/Data/Hydraulic/Publication/environment_daily.xlsx")
+write_xlsx(environment_daily, "output/environment_daily.xlsx")
 max_vpd_data <- max(environment$mean_VPD, na.rm = TRUE)
 Fig1<-ggplot(environment, aes(x = Date)) +
   geom_line(aes(y = mean_VPD), color = "steelblue", size = 1) +
@@ -531,14 +559,13 @@ Fig1<-ggplot(environment, aes(x = Date)) +
   )
 Fig1
 ### SWC
-Data_environment <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Data_environment.xlsx", sheet = "Sheet3")
+Data_environment <- read_excel("data/Data_environment.xlsx", sheet = "Sheet3")
 Data_environment$Date <- as.Date(Data_environment$Date)
-ggplot(Data_environment, aes(x = date_only)) +
-  geom_line(aes(y = Control), color = "steelblue", size = 1) +
-  geom_point(aes(y = Control), color = "steelblue", size = 1) +
-  geom_line(aes(y = Irrigated), color = "darkred", size = 1) +
-  geom_point(aes(y = (Irrigated), color = "darkred", size = 1)) +
-               labs(title = "swc",
+ggplot(Data_environment, aes(x = Date, y = all2, color = Treatment)) +
+  geom_line(size = 1) +
+  geom_point(size = 1) +
+  scale_color_manual(values = c("Control" = "steelblue", "Irrigated" = "darkred")) +
+               labs(title = "swc", y = "SWC (%)",
                     x = "Month") +
                theme_minimal() + cleanup
 ### MEAN VALUES 
@@ -572,7 +599,7 @@ Fig3
 #### three graphs in one panel
 
 # Ensure Date format
-png("my_plot.png", width = 9.14, height = 5.95, units = "in", res = 300)
+png("output/my_plot.png", width = 9.14, height = 5.95, units = "in", res = 300)
 # Set margins and text size (cex = 1.2 ≈ 12 pt)
 par(mar = c(5, 4, 0.5, 8) + 0.5, cex.axis = 1.2, cex.lab = 1.2, cex = 1.2)
 all_summary$Date <- as.Date(all_summary$Date)
@@ -605,7 +632,7 @@ plot(all_summary$Date, scaled_RH,
 # Add RH axis on right side with offset (line = 5)
 axis(side = 4, at = scales::rescale(seq(20, 100, 20), to = c(0, 500)),
      labels = seq(20, 100, 20), line = 5, col.axis = "#009E73", col = "#009E73", las = 1)
-mtext("RH (%)", side = 4.5, line = 7, cex = 1.2, col = "#009E73")
+mtext("RH (%)", side = 4, line = 7, cex = 1.2, col = "#009E73")
 
 # --- Add legend
 legend("topleft",
@@ -617,6 +644,7 @@ legend("topleft",
 dev.off()  # close PNG device
 
 ### SWC
+png("output/SWC_byTreatment.png", width = 8.14, height = 5.5, units = "in", res = 300)
 
 # Colors
 cols <- c("Irrigated" = "blue", "Control" = "red")
@@ -654,17 +682,18 @@ legend("topright",
        col = cols,
        lwd = 2.5,
        bty = "n")
+dev.off()  # close PNG device
 
 
 ## Decrease in sapflow, predawn, midday.... in different PFT
-Decrease2 <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Decrease21.xlsx", sheet = "Sheet6")
+Decrease2 <- read_excel("data/Decrease21.xlsx", sheet = "Sheet6")
 ggplot(Decrease2, aes(x = data, y = Value, fill = PFT)) +geom_boxplot() +labs( x = "Plant Functional Type (PFT)", y = "Percent Midday Decrease",
     title = "Percent Midday by PFT Group" ) + scale_fill_manual(values = c("Evergreen" = "#117733", "Semi-deciduous" = "#E69F00")) +
   theme_minimal() +theme(text = element_text(size = 12), axis.ticks = element_line(color = "black"),
     axis.ticks.length = unit(0.2, "cm"),axis.text = element_text(color = "black"),  legend.position = "none"
   )+cleanup
 ##Figure 3
-Combined_Data <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Combined_Data.xlsx", sheet = "Sheet2")
+Combined_Data <- read_excel("data/Combined_Data.xlsx", sheet = "Sheet2")
 Combined_Data$Month <- factor(Combined_Data$Month, levels = c("Early Jun", "Mid Jun", "Early Jul", "Mid Jul", "Early Aug", "Mid Aug", "Early Sep"))
 
 # Specify the combinations you want labels for
@@ -690,6 +719,14 @@ filtered_p_values_fig4 <- p_values_fig4 %>% filter(p_value < 0.05)
 sig_data <- Combined_Data %>% semi_join(filtered_p_values_fig4, by = c("Month", "Treatment"))
 sig_data_filtered <- sig_data %>%
   semi_join(selected_labels, by = c("Month", "Treatment"))
+# ggpubr::stat_cor's label.y only takes a single scalar (unlike ggpmisc::
+# stat_poly_eq's group-aware label.y vector, which this script used before
+# ggpmisc had to be dropped for lack of CRAN access in this environment) --
+# so each Month x Treatment campaign's R^2/p label is added as its own
+# stat_cor layer in the loops below, with a manually staggered label_y, to
+# keep the four labels from stacking on top of each other in the Control
+# facet.
+fig4_labels <- selected_labels %>% mutate(label_y = c(-0.2, -1.7, -2.3, -2.9))
 g <- ggplot(Combined_Data, aes(x = Height, y = PredawnWP, color = Month)) +
   geom_point(alpha = 0.3) + facet_wrap(~Treatment) +
   scale_color_discrete(name = 'Month') +
@@ -697,9 +734,15 @@ g <- ggplot(Combined_Data, aes(x = Height, y = PredawnWP, color = Month)) +
   ) + theme_minimal(base_size = 12) +cleanup + scale_x_continuous(breaks = seq(200, 800, by = 200)) +
   scale_y_continuous(breaks = seq(-3, 0, by = 0.5))+
   theme(legend.position = "right") + geom_smooth( data = sig_data_filtered, aes(x = Height, y = PredawnWP, color = Month), method = "lm", se = FALSE, linetype = "dotted", alpha = 0.6,
-    inherit.aes = FALSE) +ggpmisc::stat_poly_eq( data = sig_data_filtered, aes(x = Height, y = PredawnWP, label =  paste( ..rr.label.., ..p.value.label.., sep = "~~~"), color = Month),
-    formula = y ~ x,  parse = TRUE, label.x = 250, inherit.aes = FALSE
+    inherit.aes = FALSE)
+for (i in seq_len(nrow(fig4_labels))) {
+  mo <- fig4_labels$Month[i]; tr <- fig4_labels$Treatment[i]; ly <- fig4_labels$label_y[i]
+  g <- g + ggpubr::stat_cor(
+    data = subset(sig_data_filtered, Month == mo & Treatment == tr),
+    aes(x = Height, y = PredawnWP, label = paste(..rr.label.., ..p.label.., sep = "~`,`~"), color = Month),
+    label.x = 250, label.y = ly, inherit.aes = FALSE, show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01
   )
+}
 g <- ggplot(Combined_Data, aes(x = Height, y = PredawnWP, color = Month)) +
   geom_point(alpha = 0.3) +facet_wrap(~Treatment) +scale_color_discrete(name = 'Month') +
   labs( x = "Tree height (cm)",y = expression(italic(ψ)["pd"]*" (MPa)")) + theme_minimal(base_size = 12) +
@@ -709,11 +752,17 @@ g <- ggplot(Combined_Data, aes(x = Height, y = PredawnWP, color = Month)) +
     axis.ticks = element_line(color = "black", linewidth = 0.5),
     axis.ticks.length = unit(0.2, "cm") ) +geom_smooth( data = sig_data_filtered,aes(x = Height, y = PredawnWP, color = Month),
     method = "lm", se = FALSE, linetype = "solid", alpha = 0.6,
-    inherit.aes = FALSE) +ggpmisc::stat_poly_eq(data = sig_data_filtered,
-    aes(  x = Height, y = PredawnWP,label = paste(..rr.label.., ..p.value.label.., sep = "~~~"),
-      color = Month ), formula = y ~ x,  parse = TRUE,label.x = 600,label.y = c(0.1, 0.1, 0.2, 0.3), inherit.aes = FALSE)
+    inherit.aes = FALSE)
+for (i in seq_len(nrow(fig4_labels))) {
+  mo <- fig4_labels$Month[i]; tr <- fig4_labels$Treatment[i]; ly <- fig4_labels$label_y[i]
+  g <- g + ggpubr::stat_cor(
+    data = subset(sig_data_filtered, Month == mo & Treatment == tr),
+    aes(x = Height, y = PredawnWP, label = paste(..rr.label.., ..p.label.., sep = "~`,`~"), color = Month),
+    label.x = 250, label.y = ly, inherit.aes = FALSE, show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01
+  )
+}
 g
-ggplot2::ggsave('PredawnH.png', g,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/PredawnH.png', g,width = 8.14, height = 3.65, dpi = 1000)
 
 ## Fig. 4 sensitivity check -- J. Uddling comment: "Just for confidence: does
 ## this pattern hold if excluding Fth where we are a bit unsure about the
@@ -750,10 +799,10 @@ g_noFth <- ggplot(Combined_Data_noFth, aes(x = Height, y = PredawnWP, color = Mo
   theme(legend.position = "right") +
   geom_smooth(data = sig_data_noFth, aes(x = Height, y = PredawnWP, color = Month), method = "lm", se = FALSE, linetype = "solid", alpha = 0.6, inherit.aes = FALSE)
 g_noFth
-ggplot2::ggsave('PredawnH_noFth.png', g_noFth, width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/PredawnH_noFth.png', g_noFth, width = 8.14, height = 3.65, dpi = 1000)
 
 ### changes with tree height
-Decrease2 <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Decrease21.xlsx", sheet = "Sheet1")
+Decrease2 <- read_excel("data/Decrease21.xlsx", sheet = "Sheet1")
 GG1 <- ggscatter(Decrease2, x = 'Height', y = 'Percent_WP', color = "PFT", conf.int = TRUE, add = "none",  palette = "jco")  +scale_color_manual(values = c("E" = "#117733","SD" = "#E69F00"))+
   stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),      show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01,label.y=-40) +
   scale_color_discrete(name = 'Species') + labs(y = "Changes in ψpd (%)", x = "Tree height (cm)") +
@@ -764,7 +813,7 @@ GG1 <- ggscatter(Decrease2, x = 'Height', y = 'Percent_WP', color = "PFT", conf.
 GG1
 GG1 <- GG1 + geom_smooth(data = subset(Decrease2, Treatment == "Control"),  aes(x = Height, y = Percent_WP), method = "lm", color = "black", se = FALSE)
 GG1
-ggplot2::ggsave('ChangePH.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChangePH.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
 
 ##Changes in the sapflow
 
@@ -818,7 +867,7 @@ label.y = -50, color="#117733"
   ) +labs(y = expression("Changes in the sapflow (%)"),  x = "Tree height (cm)") + theme(legend.position = "right", axis.text = element_text(size = 12),    axis.title.y = element_text(size = 12)
   ) +  facet_wrap(~Treatment)
 GG2
-ggplot2::ggsave('ChangeF.png', GG2,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChangeF.png', GG2,width = 8.14, height = 3.65, dpi = 1000)
 
 ## Fig. 6 (single-panel version) -- J. Uddling comment: "I think p values and
 ## r2 values are for data across water treatments, right? Since these did not
@@ -836,7 +885,7 @@ GG2_pooled <- ggscatter(Decrease, x = 'Height', y = 'Percent_U', color = "Treatm
   labs(y = expression("Changes in the sapflow (%)"), x = "Tree height (cm)", color = "Treatment", shape = "Treatment") +
   theme(legend.position = "right", axis.text = element_text(size = 12), axis.title.y = element_text(size = 12), axis.title.x = element_text(size = 12))
 GG2_pooled
-ggplot2::ggsave('ChangeF_pooled.png', GG2_pooled, width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChangeF_pooled.png', GG2_pooled, width = 8.14, height = 3.65, dpi = 1000)
 ###
 dataHeight=summarySE(Decrease2,na.rm=TRUE, measurevar="Height", groupvars=c("Species","Treatment","PFT"))
 dataU=summarySE(Decrease2,na.rm=TRUE, measurevar="Percent_U", groupvars=c("Species","Treatment","PFT"))
@@ -861,6 +910,7 @@ Height
 ## Left as-is rather than guessing a source file, since silently pointing
 ## this at the wrong table would change the manuscript's reported statistics
 ## without anyone noticing.
+if (exists("Growth")) {
 m1 <- lmer(RHeight ~ Sapflow + (1 | Species), data = Growth)
 summary(m1)
 # This model considers 1️⃣ Response variable
@@ -922,8 +972,14 @@ m1 <- lmer(RHeight ~ Sapflow* PFT+ (1 | Species), data = Growth)
 summary(m1)
 m2 <- lmer(RHeight ~ Sapflow*PFT  + (Sapflow | Species), data = Growth)
 summary(m2)
-## Change in predawn with tree height 
-Decrease2 <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Decrease2.xlsx",  sheet = "Sheet1")
+} else {
+  message("Skipping RHeight/Rdiameter ~ Sapflow lmer models: `Growth` ",
+          "(per-individual growth/sapflow dataset with RHeight, Sapflow, ",
+          "Rdiameter, RHeight1, Percent_U1, PFT, Species columns) was not ",
+          "supplied, so these Results-section statistics cannot be reproduced.")
+}
+## Change in predawn with tree height
+Decrease2 <- read_excel("data/Decrease2_supplied.xlsx",  sheet = "Sheet1")
 data2 = summarySE(Decrease21, na.rm = TRUE, measurevar = "Height", groupvars = c("Species", "Treatment","PFT"))
 data1 = summarySE(Decrease21, na.rm = TRUE, measurevar = "Percent_WP", groupvars = c("Species", "Treatment","PFT"))
 merged_data <- merge(data1, data2, by = c("Species", "Treatment", "PFT"))
@@ -931,7 +987,7 @@ GG1 <- ggscatter(merged_data, x = 'Height', y = 'Percent_WP',color = "PFT", conf
 show.legend = FALSE, p.accuracy = 0.001, r.accuracy = 0.01,
 label.y = -50) + geom_smooth( data = subset(merged_data, Treatment == "Control"), method = "lm", se = FALSE, color = "black", size = 1)  +scale_color_manual( name = 'Species',values = c("Evergreen" = "#117733", "Semi-deciduous" = "#E69F00"))  +labs( y = expression("Changes in " * italic(psi)[pd] ~ "(MPa)"),  x = "Tree height (cm)" ) +theme( legend.position = "none", axis.text = element_text(size = 12),axis.title.y = element_text(size = 12)) +facet_wrap(~Treatment)
 GG1
-ggplot2::ggsave('ChangeMPA.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChangeMPA.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
 
 ## Extra figures
 #### Staistical tests
@@ -1069,7 +1125,7 @@ p  <- summary(model)$coefficients[2,4]
 Total<-change_F +cleanup+annotate("text", x = 200, y = -50, label = paste0("R² = ", sprintf("%.2f", r2),
  ", p = ", ifelse(p < 0.001, "< 0.001", signif(p, 2))), hjust = 0,  size = 4) 
 Total
-ggplot2::ggsave('ChngeH1.png', Total,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChngeH1.png', Total,width = 8.14, height = 3.65, dpi = 1000)
 
 ## Percent WP
 model <- lm(Percent_WP ~ Height * PFT, data = Decrease21)
@@ -1110,47 +1166,25 @@ GG1
 GG1 <- ggscatter(merged_data, x = 'Height', y = 'Percent_WP', conf.int = FALSE, add = "none") +stat_cor( aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
  show.legend = TRUE, p.accuracy = 0.001, r.accuracy = 0.01, label.y = -50) +theme(legend.position = "right",axis.text = element_text(size = 12),axis.title = element_text(size = 12))+geom_smooth( data = subset(merged_data, Treatment == "Control"), method = "lm", se = TRUE, color = "black", size = 1)  +scale_color_manual( name = 'Species')+ theme(strip.text = element_text(size = 12, face = "bold"), axis.text = element_text(size = 12),  axis.title.y = element_text(size = 12))+  labs( y = expression("% change in " * italic(ψ)[pd]),  x = "Tree height (cm)" ) +facet_wrap(~Treatment)
 GG1
-ggplot2::ggsave('ChngeP1.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
+ggplot2::ggsave('output/ChngeP1.png', GG1,width = 8.14, height = 3.65, dpi = 1000)
 ##RGR vs sapflow and change in sapflow
-Decrease2 <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/Decrease2.xlsx",
-  sheet = "Sheet1", col_types = c(
-    # Col  1: Individu22
-    "text",
-    # Col  2: Treatment
-    "text",
-    # Col  3: max_PredawnWP
-    "numeric",
-    # Col  4: min_PredawnWP
-    "numeric",
-    # Col  5: max_Spflow
-    "numeric",
-    # Col  6: min_Spflow
-    "numeric",
-    # Col  7: max_u
-    "numeric",
-    # Col  8: min_u
-    "numeric",
-    # Col  9: max_MiddayWP
-    "numeric",
-    # Col 10: min_MiddayWP
-    "numeric"
-  ))
-model<-lmer(Percent_U ~ RHeight * Treatment  + (1 | Species), data=Decrease2)
+Decrease2 <- read_excel("data/Decrease2_supplied.xlsx", sheet = "Sheet1")
+model<-lmer(Percent_U ~ RHeight * Treatment  + (1 | Species), data=Decrease21)
 anova(model)
-model1 <- lmer(Percent_U ~ RHeight + Treatment + (RHeight | Species), data = Decrease2)
+model1 <- lmer(Percent_U ~ RHeight + Treatment + (RHeight | Species), data = Decrease21)
 anova(model1)
 anova(model, model1)
-model<-lmer(Percent_U ~ RHeight * Treatment+PFT+  + (1 | Species), data=Decrease2)
-model<-lmer(Percent_U ~ RHeight *PFT+ Treatment+PFT+  + (1 | Species), data=Decrease2)
-model_a <- lmer(RHeight ~ max_Spflow * Treatment + (1 | Species), data = Decrease2)
-model_a_slope <- lmer(RHeight ~ max_Spflow + Treatment + (max_Spflow | Species), data = Decrease2)
+model<-lmer(Percent_U ~ RHeight * Treatment+PFT+  + (1 | Species), data=Decrease21)
+model<-lmer(Percent_U ~ RHeight *PFT+ Treatment+PFT+  + (1 | Species), data=Decrease21)
+model_a <- lmer(RHeight ~ max_Spflow * Treatment + (1 | Species), data = Decrease21)
+model_a_slope <- lmer(RHeight ~ max_Spflow + Treatment + (max_Spflow | Species), data = Decrease21)
 model_a <- lmer(RGR ~ max_Spflow * Treatment + (1 | Species), data = Decrease22)
 model_a_slope <- lmer(RGR ~ max_Spflow + Treatment + (max_Spflow | Species), data = Decrease22)
 anova(model_a)
 anova(model_a_slope)
 
 ## SWC graph
-environment1 <- read_excel("C:/Gothenburg/Data/Hydraulic/Publication/environment1.xlsx", sheet = "SWC", col_types = c("date", "numeric", "text"))
-SWC1<-ggplot(swc, aes(x = Date, y = SWC, color = Treatment)) + geom_line(linewidth = 0.6) +scale_color_manual(values = c("Irrigated" = "blue","Control" = "red")) +  labs(x = "Date",  y = "SWC (%)",color = "") +theme_classic(base_size = 12) +theme(legend.position = c(0.95, 0.95),legend.justification = c("right", "top"),legend.text = element_text(size = 12), axis.title = element_text(size = 12),  axis.text = element_text(size = 12), panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6)) 
+environment1 <- read_excel("data/environment1.xlsx", sheet = "SWC", col_types = c("date", "numeric", "text"))
+SWC1<-ggplot(environment1, aes(x = Date, y = SWC, color = Treatment)) + geom_line(linewidth = 0.6) +scale_color_manual(values = c("Irrigated" = "blue","Control" = "red")) +  labs(x = "Date",  y = "SWC (%)",color = "") +theme_classic(base_size = 12) +theme(legend.position = c(0.95, 0.95),legend.justification = c("right", "top"),legend.text = element_text(size = 12), axis.title = element_text(size = 12),  axis.text = element_text(size = 12), panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6))
 SWC1
-ggplot2::ggsave('SWCAA.png', SWC1,width = 5.14, height = 3.65, dpi = 400)
+ggplot2::ggsave('output/SWCAA.png', SWC1,width = 5.14, height = 3.65, dpi = 400)
