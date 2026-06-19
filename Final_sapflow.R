@@ -125,6 +125,63 @@ summarySE <- function(data = NULL, measurevar, groupvars = NULL, na.rm = FALSE,
 }
 cleanup=theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.background = element_blank(),axis.line = element_line(color = "black"))
 
+library(nlme)
+library(emmeans)
+# Significance letters for Fig. 1 (which Months differ within each Treatment
+# facet, for psi_pd/psi_md/DWP/F). Trees are repeatedly measured across
+# months (same Individu22 tracked over the season), so comparing months with
+# a one-way ANOVA/t-tests would pseudoreplicate -- instead Month is fit as a
+# fixed effect with a per-tree random intercept (1|Individu22), and the
+# residual variance is allowed to differ by Month (varIdent): Levene's test
+# rejects equal variance across months for every one of these variables here,
+# which makes sense -- the dry season progressively widens the spread of
+# water potential/sap flow as some trees access deeper water than others.
+# multcomp/multcompView aren't installable in this environment (no CRAN
+# access), so the compact-letter-display step below is reimplemented
+# directly from emmeans' Tukey-adjusted pairwise p-values: exhaustively
+# enumerate subsets of months (<=7, so <=127 subsets) to find every maximal
+# set of mutually non-significant months and give each its own letter.
+cld_from_sig <- function(sig_mat, order_levels) {
+  lv <- order_levels; n <- length(lv)
+  ns_ok <- function(set) {
+    if (length(set) < 2) return(TRUE)
+    cb <- combn(set, 2)
+    all(!sig_mat[cbind(cb[1, ], cb[2, ])])
+  }
+  cliques <- list()
+  for (mask in 1:(2^n - 1)) {
+    bits <- as.logical(intToBits(mask))[1:n]
+    set <- lv[bits]
+    if (ns_ok(set)) cliques[[length(cliques) + 1]] <- set
+  }
+  keep <- !sapply(cliques, function(a) any(sapply(cliques, function(b) all(a %in% b) && length(a) < length(b))))
+  maximal <- cliques[keep]
+  maximal <- maximal[order(-sapply(maximal, length))]
+  out <- setNames(vector("list", n), lv)
+  for (i in seq_along(maximal)) for (m in maximal[[i]]) out[[m]] <- c(out[[m]], letters[i])
+  sapply(lv, function(l) paste0(sort(out[[l]]), collapse = ""))
+}
+month_cld <- function(data, response, treat) {
+  sub <- data %>% filter(Treatment == treat, !is.na(.data[[response]]))
+  sub$Month <- droplevels(sub$Month)
+  form <- as.formula(paste0(response, " ~ Month"))
+  m <- nlme::lme(form, random = ~1 | Individu22, weights = nlme::varIdent(form = ~1 | Month),
+                 data = sub, control = nlme::lmeControl(opt = "optim"))
+  pwdf <- as.data.frame(pairs(emmeans(m, ~Month), adjust = "tukey"))
+  lv <- levels(sub$Month)
+  sig_mat <- matrix(FALSE, length(lv), length(lv), dimnames = list(lv, lv))
+  for (i in seq_len(nrow(pwdf))) {
+    ab <- trimws(strsplit(pwdf$contrast[i], " - ")[[1]])
+    if (pwdf$p.value[i] < 0.05) { sig_mat[ab[1], ab[2]] <- TRUE; sig_mat[ab[2], ab[1]] <- TRUE }
+  }
+  cld <- cld_from_sig(sig_mat, lv)
+  rng <- max(sub[[response]], na.rm = TRUE) - min(sub[[response]], na.rm = TRUE)
+  ytop <- sub %>% group_by(Month) %>% summarise(ytop = max(.data[[response]], na.rm = TRUE), .groups = "drop")
+  data.frame(Month = lv, Treatment = treat, letter = cld[lv]) %>%
+    left_join(ytop, by = "Month") %>%
+    mutate(y_label = ytop + 0.08 * rng)
+}
+
 Control<-subset(Raw_data, Treatment=="Control")
 Makera1<-subset(Raw_data, Site=="Makera")
 ## Remove croton
@@ -133,35 +190,43 @@ Makera <- Makera1 %>% filter(Species != "Cme")
 Makera$Month<-factor(Makera$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 data1=summarySE(Makera,na.rm=TRUE, measurevar="PredawnWP", groupvars=c("Treatment","Month", "Species"))
 data11=summarySE(Makera,na.rm=TRUE, measurevar="PredawnWP", groupvars=c("Month","Treatment"))
+lab1 <- bind_rows(month_cld(Makera, "PredawnWP", "Control"), month_cld(Makera, "PredawnWP", "Irrigated"))
 
 g1<-ggplot(data1, aes(x = Month, y = PredawnWP, group = Month, color = Species)) +scale_shape_manual(values = c(15, 17, 18, 19, 4)) +geom_errorbar(aes(ymin = PredawnWP- se, ymax = PredawnWP + se), width = 0.1) +geom_point(size = 2) + theme(strip.text = element_blank())+
   geom_line(aes(group = Species))+facet_wrap(~Treatment, labeller = labeller(Treatment = c( Control = "Control", Irrigated = "Irrigated"))) +labs( x = "Months", y = "Predawn DT") +cleanup+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+labs(y=expression(italic(ψ)["pd"]*" (MPa)"))+labs( x = "Months")+theme(
     strip.text = element_text(size = 12, face = "bold"), axis.text = element_text(size = 12),  axis.title.y = element_text(size = 12), axis.title.x = element_blank(), axis.text.x = element_blank() )+
-  geom_line(data = data11, aes(x = Month, y = PredawnWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data11, aes(x = Month, ymin = PredawnWP - se, ymax = PredawnWP + se), width = 0.2, color = "black") +  geom_point(data = data11, aes(x = Month, y = PredawnWP), shape = 8, size = 3, color = "black")
+  geom_line(data = data11, aes(x = Month, y = PredawnWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data11, aes(x = Month, ymin = PredawnWP - se, ymax = PredawnWP + se), width = 0.2, color = "black") +  geom_point(data = data11, aes(x = Month, y = PredawnWP), shape = 8, size = 3, color = "black")+
+  geom_text(data = lab1, aes(x = Month, y = y_label, label = letter), inherit.aes = FALSE, color = "black", size = 4, fontface = "bold")
 
 g1
 data2=summarySE(Makera,na.rm=TRUE, measurevar="MiddayWP", groupvars=c("Species","Month","Treatment"))
 data21=summarySE(Makera,na.rm=TRUE, measurevar="MiddayWP", groupvars=c("Month","Treatment"))
+lab2 <- bind_rows(month_cld(Makera, "MiddayWP", "Control"), month_cld(Makera, "MiddayWP", "Irrigated"))
 
 g2<-ggplot(data2, aes(x = Month, y = MiddayWP, group = Month, color = Species)) +scale_shape_manual(values = c(15, 17, 18, 19, 4)) +geom_errorbar(aes(ymin = MiddayWP - se, ymax = MiddayWP + se), width = 0.1) +geom_point(size = 2) +theme(strip.text = element_blank()) +
-  geom_line(aes(group = Species))+labs(y=expression(italic(ψ)["md"]*" (MPa)")) +labs( x = "Months") +cleanup+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+facet_wrap (~Treatment)+theme(axis.title.x=element_blank(), axis.text.x=element_blank())+theme(legend.position="none")+geom_line(data = data21, aes(x = Month, y = MiddayWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data21, aes(x = Month, ymin = MiddayWP - se, ymax = MiddayWP + se), width = 0.2, color = "black") +  geom_point(data = data21, aes(x = Month, y = MiddayWP), shape = 8, size = 3, color = "black")
+  geom_line(aes(group = Species))+labs(y=expression(italic(ψ)["md"]*" (MPa)")) +labs( x = "Months") +cleanup+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+facet_wrap (~Treatment)+theme(axis.title.x=element_blank(), axis.text.x=element_blank())+theme(legend.position="none")+geom_line(data = data21, aes(x = Month, y = MiddayWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data21, aes(x = Month, ymin = MiddayWP - se, ymax = MiddayWP + se), width = 0.2, color = "black") +  geom_point(data = data21, aes(x = Month, y = MiddayWP), shape = 8, size = 3, color = "black")+
+  geom_text(data = lab2, aes(x = Month, y = y_label, label = letter), inherit.aes = FALSE, color = "black", size = 4, fontface = "bold")
 g2
 
 data3=summarySE(Makera,na.rm=TRUE, measurevar="DWP", groupvars=c("Species","Month","Treatment"))
 data31=summarySE(Makera,na.rm=TRUE, measurevar="DWP", groupvars=c("Month","Treatment"))
+lab3 <- bind_rows(month_cld(Makera, "DWP", "Control"), month_cld(Makera, "DWP", "Irrigated"))
 
 g3<-ggplot(data3, aes(x = Month, y = DWP, group = Month, color = Species)) +scale_shape_manual(values = c(15, 17, 18, 19, 4)) +geom_errorbar(aes(ymin = DWP - se, ymax = DWP + se), width = 0.1) +geom_point(size = 2) + theme(strip.text = element_blank()) +
   theme(axis.title.x=element_blank(), axis.text.x=element_blank())+geom_line(aes(group = Species)) +labs( x = "Months", y= expression(Delta*italic(ψ)~"(MPa)")) +cleanup+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+facet_wrap (~Treatment)+theme(legend.position="none")+
-  geom_line(data = data31, aes(x = Month, y = DWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data31, aes(x = Month, ymin = DWP - se, ymax = DWP + se), width = 0.2, color = "black") +  geom_point(data = data31, aes(x = Month, y = DWP), shape = 8, size = 3, color = "black")
+  geom_line(data = data31, aes(x = Month, y = DWP, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data31, aes(x = Month, ymin = DWP - se, ymax = DWP + se), width = 0.2, color = "black") +  geom_point(data = data31, aes(x = Month, y = DWP), shape = 8, size = 3, color = "black")+
+  geom_text(data = lab3, aes(x = Month, y = y_label, label = letter), inherit.aes = FALSE, color = "black", size = 4, fontface = "bold")
 g3
 Makera2 <- Makera %>% filter(Species != "Mla")
 Makera2$Month<-factor(Makera2$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
 
 data5=summarySE(Makera2,na.rm=TRUE, measurevar="Spflow", groupvars=c("Species","Month","Treatment"))
 data51=summarySE(Makera2,na.rm=TRUE, measurevar="Spflow", groupvars=c("Month","Treatment"))
+lab5 <- bind_rows(month_cld(Makera2, "Spflow", "Control"), month_cld(Makera2, "Spflow", "Irrigated"))
 g5<-ggplot(data5, aes(x = Month, y = Spflow, group = Month, color = Species)) +scale_shape_manual(values = c(15, 17, 18, 19, 4)) +geom_errorbar(aes(ymin = Spflow- se, ymax = Spflow + se), width = 0.1) +geom_point(size = 2) + theme(strip.text = element_blank())+ theme(legend.position="none")+
   geom_line(aes(group = Species))+facet_wrap(~Treatment) +labs( x = "Months", y = "Predawn DT") +cleanup+theme(axis.text = element_text(size = 12))+theme(axis.title.y = element_text(size = 12))+ylab(bquote(italic(F)~'('*kg~h^-1*')'))+theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  geom_line(data = data51, aes(x = Month, y = Spflow, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data51, aes(x = Month, ymin = Spflow - se, ymax = Spflow + se), width = 0.2, color = "black") +  geom_point(data = data51, aes(x = Month, y = Spflow), shape = 8, size = 3, color = "black")
+  geom_line(data = data51, aes(x = Month, y = Spflow, group = Treatment), color = "black", linetype = "dashed")+geom_errorbar(data = data51, aes(x = Month, ymin = Spflow - se, ymax = Spflow + se), width = 0.2, color = "black") +  geom_point(data = data51, aes(x = Month, y = Spflow), shape = 8, size = 3, color = "black")+
+  geom_text(data = lab5, aes(x = Month, y = y_label, label = letter), inherit.aes = FALSE, color = "black", size = 4, fontface = "bold")
 g5
 ## Predawn DV
 Makera$Month <- factor(Makera$Month1, c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
