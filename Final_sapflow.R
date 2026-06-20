@@ -246,7 +246,7 @@ plots <- plot_grid(g1, g2, g3, g5, ncol = 1, align = 'v', rel_heights = c(2.5, 2
 plots
 Figure <- plot_grid( plots,ncol = 2, rel_widths = c(3, 1.5))
 Figure
-ggplot2::ggsave('output/Waterfff.png', plots,width = 10.14, height = 5.75, dpi = 1000)
+ggplot2::ggsave('output/Waterfff.png', plots,width = 10.14, height = 11.5, dpi = 1000)
 ggplot2::ggsave('output/Wateruses.png', g1,width = 10.14, height = 5.75, dpi = 1000)
 ### Leaf habit
 Makera$Month<-factor(Makera$Month1,c("Early Jun","Mid Jun","Early Jul","Mid Jul","Early Aug","Mid Aug","Early Sep"))
